@@ -160,9 +160,4 @@ abstract class BaseTableCreationSparkAction<ThisT> extends BaseSparkAction<ThisT
       table.updateProperties().set(TableProperties.DEFAULT_NAME_MAPPING, nameMappingJson).commit();
     }
   }
-
-  protected String getMetadataLocation(Table table) {
-    return table.properties().getOrDefault(TableProperties.WRITE_METADATA_LOCATION,
-        table.location() + "/" + ICEBERG_METADATA_FOLDER);
-  }
 }

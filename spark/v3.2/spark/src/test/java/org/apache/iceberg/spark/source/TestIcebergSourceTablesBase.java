@@ -19,8 +19,14 @@
 
 package org.apache.iceberg.spark.source;
 
+import io.delta.standalone.DeltaLog;
+import io.delta.standalone.VersionLog;
+import io.delta.standalone.actions.AddFile;
+import io.delta.standalone.data.RowRecord;
+import io.delta.tables.DeltaTable;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.net.URI;
 import java.util.Comparator;
 import java.util.List;
 import java.util.StringJoiner;
@@ -70,11 +76,15 @@ import org.apache.spark.sql.Row;
 import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.SaveMode;
 import org.apache.spark.sql.catalyst.InternalRow;
+import org.apache.spark.sql.catalyst.analysis.NoSuchDatabaseException;
+import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
+import org.apache.spark.sql.catalyst.catalog.CatalogTable;
 import org.apache.spark.sql.types.StructType;
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import scala.Some;
 
 import static org.apache.iceberg.ManifestContent.DATA;
 import static org.apache.iceberg.ManifestContent.DELETES;
@@ -136,6 +146,52 @@ public abstract class TestIcebergSourceTablesBase extends SparkTestBase {
         .collectAsList();
 
     Assert.assertEquals("Records should match", expectedRecords, actualRecords);
+  }
+
+  @Test
+  public void testDeltaLake() throws NoSuchDatabaseException, NoSuchTableException, IOException {
+    TableIdentifier tableIdentifier = TableIdentifier.of("db", "table");
+    createTable(tableIdentifier, SCHEMA, PartitionSpec.unpartitioned());
+
+    // Delete the contents of whatever was leftover
+    CatalogTable tableMetadata = spark.sessionState().catalog().getTableMetadata(
+            new org.apache.spark.sql.catalyst.TableIdentifier("table", Some.apply("db")));
+    URI location = tableMetadata.location();
+    // FileUtils.deleteDirectory(new File(location));
+
+    List<SimpleRecord> expectedRecords = Lists.newArrayList(
+            new SimpleRecord(1, "1"),
+            new SimpleRecord(2, "2"),
+            new SimpleRecord(3, "3"));
+
+    spark.conf().set("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog");
+    Dataset<Row> inputDf = spark.createDataFrame(expectedRecords, SimpleRecord.class);
+
+    // Create the Delta Lake files
+    inputDf.write()
+            .format("delta")
+            .mode(SaveMode.Overwrite)
+            .save(loadLocation(tableIdentifier));
+
+//    List<SimpleRecord> toAppend = Lists.newArrayList(
+//            new SimpleRecord(4, "4"));
+//
+//    Dataset<Row> toAppendRows = spark.createDataFrame(toAppend, SimpleRecord.class);
+//    toAppendRows.write().mode(SaveMode.Append).format("delta").save(loadLocation(tableIdentifier));
+
+    DeltaTable deltaTable = DeltaTable.forPath(loadLocation(tableIdentifier));
+    deltaTable.updateExpr(
+            "data = '1'",
+            ImmutableMap.of("data", "'4'")
+    );
+
+    DeltaLog deltaLog = DeltaLog.forTable(metastore.hiveConf(), loadLocation(tableIdentifier));
+    List<AddFile> allFiles = deltaLog.snapshot().getAllFiles();
+    List<VersionLog> versionLogs = Lists.newArrayList();
+
+    RowRecord next = deltaLog.snapshot().open().next();
+
+    System.out.println("Dummy message");
   }
 
   @Test

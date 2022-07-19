@@ -182,7 +182,7 @@ class AddFilesProcedure extends BaseProcedure {
     String stagingLocation = getMetadataLocation(table);
     TableIdentifier sourceTableIdentifier = Spark3Util.toV1TableIdentifier(sourceIdent);
     SparkTableUtil.importSparkTable(spark(), sourceTableIdentifier, table, stagingLocation, partitionFilter,
-        checkDuplicateFiles);
+        checkDuplicateFiles, null, null);
   }
 
   private void importPartitions(Table table, List<SparkTableUtil.SparkPartition> partitions,

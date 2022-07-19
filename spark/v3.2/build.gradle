@@ -50,6 +50,8 @@ project(":iceberg-spark:iceberg-spark-${sparkMajorVersion}_${scalaVersion}") {
   }
 
   dependencies {
+    implementation ('io.delta:delta-core_2.12:1.2.1')
+    implementation ('io.delta:delta-standalone_2.12:0.4.1')
     implementation project(path: ':iceberg-bundled-guava', configuration: 'shadow')
     api project(':iceberg-api')
     implementation project(':iceberg-common')

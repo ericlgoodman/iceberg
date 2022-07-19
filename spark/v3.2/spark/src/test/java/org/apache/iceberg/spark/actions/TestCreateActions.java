@@ -24,6 +24,7 @@ import java.io.FilenameFilter;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -34,6 +35,7 @@ import org.apache.commons.io.filefilter.TrueFileFilter;
 import org.apache.hadoop.fs.Path;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.actions.MigrateDeltaLakeTable;
 import org.apache.iceberg.actions.MigrateTable;
 import org.apache.iceberg.actions.SnapshotTable;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
@@ -44,6 +46,7 @@ import org.apache.iceberg.spark.Spark3Util;
 import org.apache.iceberg.spark.SparkCatalog;
 import org.apache.iceberg.spark.SparkCatalogTestBase;
 import org.apache.iceberg.spark.SparkSessionCatalog;
+import org.apache.iceberg.spark.source.LessSimpleRecord;
 import org.apache.iceberg.spark.source.SimpleRecord;
 import org.apache.iceberg.spark.source.SparkTable;
 import org.apache.iceberg.types.Types;
@@ -84,6 +87,10 @@ import scala.collection.Seq;
 public class TestCreateActions extends SparkCatalogTestBase {
   private static final String CREATE_PARTITIONED_PARQUET = "CREATE TABLE %s (id INT, data STRING) " +
       "using parquet PARTITIONED BY (id) LOCATION '%s'";
+
+  private static final String CREATE_LESS_SIMPLE_PARTITIONED_PARQUET = "CREATE TABLE %s (id INT, secondId INT, data " +
+      "STRING) " +
+      "using parquet PARTITIONED BY (id, secondId) LOCATION '%s'";
   private static final String CREATE_PARQUET = "CREATE TABLE %s (id INT, data STRING) " +
       "using parquet LOCATION '%s'";
   private static final String CREATE_HIVE_EXTERNAL_PARQUET = "CREATE EXTERNAL TABLE %s (data STRING) " +
@@ -158,9 +165,19 @@ public class TestCreateActions extends SparkCatalogTestBase {
         new SimpleRecord(3, "c")
     );
 
-    Dataset<Row> df = spark.createDataFrame(expected, SimpleRecord.class);
+    ArrayList<LessSimpleRecord> lessSimpleRecords = Lists.newArrayList(
+        new LessSimpleRecord(1, 4, "a"),
+        new LessSimpleRecord(2, 5, "b"),
+        new LessSimpleRecord(3, 6, "c"),
+        new LessSimpleRecord(3, 6, "e"),
+        new LessSimpleRecord(3, 4, "f"),
+        new LessSimpleRecord(4, 4, "g")
+    );
 
-    df.select("id", "data").orderBy("data").write()
+    Dataset<Row> df = spark.createDataFrame(expected, SimpleRecord.class);
+    Dataset<Row> lessSimpleDf = spark.createDataFrame(lessSimpleRecords, LessSimpleRecord.class);
+
+    lessSimpleDf.select("id", "secondId", "data").orderBy("data").write()
         .mode("append")
         .option("path", tableLocation)
         .saveAsTable(baseTableName);
@@ -178,7 +195,7 @@ public class TestCreateActions extends SparkCatalogTestBase {
     Assume.assumeTrue("Can only migrate from Spark Session Catalog", catalog.name().equals("spark_catalog"));
     String source = sourceName("test_migrate_partitioned_table");
     String dest = source;
-    createSourceTable(CREATE_PARTITIONED_PARQUET, source);
+    createSourceTable(CREATE_LESS_SIMPLE_PARTITIONED_PARQUET, source);
     assertMigratedFileCount(SparkActions.get().migrateTable(source), source, dest);
   }
 
@@ -821,6 +838,15 @@ public class TestCreateActions extends SparkCatalogTestBase {
     validateTables(source, dest);
     Assert.assertEquals("Expected number of migrated files",
         expectedFiles, migratedFiles.migratedDataFilesCount());
+  }
+
+  // Counts the number of files in the source table, makes sure the same files exist in the destination table
+  private void assertMigratedFileCountDeltaLake(MigrateDeltaLakeTable migrateAction, String source, String dest)
+      throws NoSuchTableException, NoSuchDatabaseException, ParseException {
+    long expectedFiles = expectedFilesCount(source);
+    MigrateDeltaLakeTable.Result migratedFiles = migrateAction.execute();
+    validateTables(source, dest);
+    Assert.assertEquals("Expected number of migrated files", expectedFiles, migratedFiles.importedDataFilesCount());
   }
 
   // Counts the number of files in the source table, makes sure the same files exist in the destination table

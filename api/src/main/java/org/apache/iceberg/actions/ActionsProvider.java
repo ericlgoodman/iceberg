@@ -40,6 +40,10 @@ public interface ActionsProvider {
     throw new UnsupportedOperationException(this.getClass().getName() + " does not implement migrateTable");
   }
 
+  default MigrateDeltaLakeTable migrateDeltaLakeTable(String tableIdent) {
+    throw new UnsupportedOperationException(this.getClass().getName() + " does not implement migrateDeltaLakeTable");
+  }
+
   /**
    * Instantiates an action to delete orphan files.
    */

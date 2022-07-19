@@ -109,6 +109,8 @@ public class SparkTableUtil {
       "This is disabled by default as Iceberg is not designed for mulitple references to the same file" +
       " within the same table.  If you are sure, you may set 'check_duplicate_files' to false to force the import.";
 
+  private static final String ICEBERG_METADATA_FOLDER = "metadata";
+
 
   private SparkTableUtil() {
   }
@@ -377,10 +379,18 @@ public class SparkTableUtil {
    * @param stagingDir a staging directory to store temporary manifest files
    * @param partitionFilter only import partitions whose values match those in the map, can be partially defined
    * @param checkDuplicateFiles if true, throw exception if import results in a duplicate data file
+   * @param spec partition spec
+   * @param sourceTablePartitions list of actual partitions of the table
    */
-  public static void importSparkTable(SparkSession spark, TableIdentifier sourceTableIdent, Table targetTable,
-                                      String stagingDir, Map<String, String> partitionFilter,
-                                      boolean checkDuplicateFiles) {
+  public static void importSparkTable(
+      SparkSession spark,
+      TableIdentifier sourceTableIdent,
+      Table targetTable,
+      String stagingDir, Map<String, String> partitionFilter,
+      boolean checkDuplicateFiles,
+      PartitionSpec spec,
+      List<SparkPartition> sourceTablePartitions
+  ) {
     SessionCatalog catalog = spark.sessionState().catalog();
 
     String db = sourceTableIdent.database().nonEmpty() ?
@@ -393,13 +403,16 @@ public class SparkTableUtil {
     }
 
     try {
-      PartitionSpec spec = SparkSchemaUtil.specForTable(spark, sourceTableIdentWithDB.unquotedString());
+      if (spec == null) {
+        spec = SparkSchemaUtil.specForTable(spark, sourceTableIdentWithDB.unquotedString());
+      }
 
       if (Objects.equal(spec, PartitionSpec.unpartitioned())) {
         importUnpartitionedSparkTable(spark, sourceTableIdentWithDB, targetTable, checkDuplicateFiles);
       } else {
-        List<SparkPartition> sourceTablePartitions = getPartitions(spark, sourceTableIdent,
-            partitionFilter);
+        if (sourceTablePartitions == null) {
+          sourceTablePartitions = getPartitions(spark, sourceTableIdent, partitionFilter);
+        }
         Preconditions.checkArgument(!sourceTablePartitions.isEmpty(),
             "Cannot find any partitions in table %s", sourceTableIdent);
         importSparkPartitions(spark, sourceTablePartitions, targetTable, spec, stagingDir, checkDuplicateFiles);
@@ -425,7 +438,8 @@ public class SparkTableUtil {
    */
   public static void importSparkTable(SparkSession spark, TableIdentifier sourceTableIdent, Table targetTable,
                                       String stagingDir, boolean checkDuplicateFiles) {
-    importSparkTable(spark, sourceTableIdent, targetTable, stagingDir, Collections.emptyMap(), checkDuplicateFiles);
+    importSparkTable(spark, sourceTableIdent, targetTable, stagingDir, Collections.emptyMap(), checkDuplicateFiles,
+        null, null);
   }
 
   /**
@@ -441,7 +455,7 @@ public class SparkTableUtil {
    */
   public static void importSparkTable(SparkSession spark, TableIdentifier sourceTableIdent, Table targetTable,
                                       String stagingDir) {
-    importSparkTable(spark, sourceTableIdent, targetTable, stagingDir, Collections.emptyMap(), false);
+    importSparkTable(spark, sourceTableIdent, targetTable, stagingDir, Collections.emptyMap(), false, null, null);
   }
 
   private static void importUnpartitionedSparkTable(SparkSession spark, TableIdentifier sourceTableIdent,
@@ -614,6 +628,11 @@ public class SparkTableUtil {
     SparkTable metadataTable = new SparkTable(MetadataTableUtils.createMetadataTableInstance(table, type), false);
     CaseInsensitiveStringMap options = new CaseInsensitiveStringMap(extraOptions);
     return Dataset.ofRows(spark, DataSourceV2Relation.create(metadataTable, Some.empty(), Some.empty(), options));
+  }
+
+  public static String getIcebergMetadataLocation(Table table) {
+    return table.properties().getOrDefault(TableProperties.WRITE_METADATA_LOCATION,
+        table.location() + "/" + ICEBERG_METADATA_FOLDER);
   }
 
   /**

@@ -21,6 +21,14 @@ package org.apache.iceberg.spark.actions;
 
 import org.apache.iceberg.Table;
 import org.apache.iceberg.actions.ActionsProvider;
+import org.apache.iceberg.actions.DeleteOrphanFiles;
+import org.apache.iceberg.actions.DeleteReachableFiles;
+import org.apache.iceberg.actions.ExpireSnapshots;
+import org.apache.iceberg.actions.MigrateDeltaLakeTable;
+import org.apache.iceberg.actions.MigrateTable;
+import org.apache.iceberg.actions.RewriteDataFiles;
+import org.apache.iceberg.actions.RewriteManifests;
+import org.apache.iceberg.actions.SnapshotTable;
 import org.apache.iceberg.spark.Spark3Util;
 import org.apache.iceberg.spark.Spark3Util.CatalogAndIdentifier;
 import org.apache.spark.sql.SparkSession;
@@ -62,6 +70,14 @@ public class SparkActions implements ActionsProvider {
     CatalogPlugin defaultCatalog = spark.sessionState().catalogManager().currentCatalog();
     CatalogAndIdentifier catalogAndIdent = Spark3Util.catalogAndIdentifier(ctx, spark, tableIdent, defaultCatalog);
     return new BaseMigrateTableSparkAction(spark, catalogAndIdent.catalog(), catalogAndIdent.identifier());
+  }
+
+  @Override
+  public MigrateDeltaLakeTable migrateDeltaLakeTable(String tableIdent) {
+    String ctx = "migrate delta target";
+    CatalogPlugin defaultCatalog = spark.sessionState().catalogManager().currentCatalog();
+    CatalogAndIdentifier catalogAndIdent = Spark3Util.catalogAndIdentifier(ctx, spark, tableIdent, defaultCatalog);
+    return new BaseMigrateDeltaLakeTableSparkAction(spark, catalogAndIdent.catalog(), catalogAndIdent.identifier());
   }
 
   @Override
